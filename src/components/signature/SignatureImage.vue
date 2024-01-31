@@ -1,0 +1,242 @@
+
+
+<script setup lang="ts">
+import { ref } from 'vue';
+import { storeToRefs } from 'pinia';
+import { useI18n } from 'vue-i18n';
+import { useImageStore, useConfigStore } from '@/store';
+import SignaturePopup from '@/components/signature/SignaturePopup.vue';
+import SignIcon from '@/components/SignIcon.vue';
+import useWarnPopup from '@/hooks/useWarnPopup';
+import toast from '@/utils/toast';
+import { convertToBase64, convertToBase64Png } from '@/utils/image';
+import { checkFile } from '@/utils/reader';
+
+interface Props {
+  isShowImage: boolean;
+}
+
+defineProps<Props>();
+const emit = defineEmits(['update:isShowImage', 'useImage']);
+const currentSelect = ref('');
+const isShowImagePopup = ref(false);
+const { imageList } = storeToRefs(useImageStore());
+const { t, locale } = useI18n();
+const { isShowWarnPopup, SignPopup, toggleWarnPopup } = useWarnPopup();
+const { toggleLoading } = useConfigStore();
+
+function useImage() {
+  emit('useImage', currentSelect.value);
+  close();
+}
+
+function selectImage(image: string) {
+  currentSelect.value = image;
+}
+
+function deleteImage() {
+  useImageStore().deleteImage(currentSelect.value);
+  toast.showToast(t('prompt.picture_delete_success'), 'success');
+  toggleWarnPopup(false);
+  currentSelect.value = '';
+}
+
+function toggleImagePopup(isOpen: boolean) {
+  isShowImagePopup.value = isOpen;
+}
+
+async function uploadFile(event: Event) {
+  
+  const target = event.target as HTMLInputElement;
+  const { files } = target;
+
+
+  await readerFile(files);
+  target.value = '';
+}
+
+
+function dropFile(event: DragEvent) {
+  const { dataTransfer } = event;
+  const files = dataTransfer?.files;
+
+  readerFile(files);
+}
+
+async function readerFile(files?: FileList | null) {
+  try {
+    const file = checkFile(files, /.png|.jpg|.jpeg/);
+
+    if (!file) return;
+    toggleLoading({ isShow: true, title: 'upload_file', content: 'file_uploading' });
+    
+    const result = await convertToBase64Png(file);
+
+    if (imageList.value.includes(result)) {
+      toast.showToast(t('prompt.picture_already_exists'), 'error');
+      return;
+    }
+
+    
+    useImageStore().addImage(result);
+    toggleImagePopup(false);
+    toast.showToast(t('prompt.picture_add_success'), 'success');
+  } catch {
+    toast.showToast(t('prompt.picture_upload_failed'), 'error');
+  } finally {
+    toggleLoading({ isShow: false });
+  }
+}
+
+function dragImage(event: DragEvent) {
+  const target = event.target as HTMLImageElement;
+
+  event.dataTransfer?.setData('text/plain', target.src);
+}
+
+function close() {
+  emit('update:isShowImage', false);
+}
+</script>
+
+
+<template>
+  <signature-popup
+    :is-show-popup="isShowImage"
+    :title="$t('picture_gallery')"
+    :is-disabled="!currentSelect"
+    @close="close"
+    @use="useImage"
+  >
+    <ul
+      v-if="imageList.length"
+      class="signature_list"
+    >
+      <img
+        src="@/assets/icon/ic_add_dark.svg"
+        alt="add dark icon"
+        width="60"
+        height="60"
+        class="iconScale mb-3"
+        @click="toggleImagePopup(true)"
+      />
+      <li
+        v-for="image in imageList"
+        :key="image"
+        :class="[
+          'rounded-[20px] relative w-full flex justify-center cursor-pointer h-[180px]',
+          currentSelect === image ? 'bg-primary opacity-70' : 'bg-white',
+        ]"
+        @click="selectImage(image)"
+      >
+        <img
+          :src="image"
+          alt="image"
+          class="object-cover rounded-[20px]"
+          @dragstart="dragImage"
+        />
+        <sign-icon
+          v-show="currentSelect === image"
+          name="close_s"
+          class="absolute top-1 right-1 w-10 h-10 text-gray-80 hover:text-gray-80"
+
+          @click="toggleWarnPopup(true)"
+        />
+      </li>
+    </ul>
+
+    <div
+      v-else
+      class="signature_list justify-center"
+    >
+      <img
+        src="@/assets/icon/ic_add_dark.svg"
+        alt="add dark icon"
+        width="80"
+        height="80"
+        class="iconScale mb-5"
+        @click="toggleImagePopup(true)"
+      />
+      <h5 class="text-secondary text-center">{{ $t('add_picture') }}</h5>
+    </div>
+  </signature-popup>
+
+  <sign-popup
+    v-if="isShowImagePopup"
+    :title="$t('add_picture')"
+  >
+    <div
+      class="signature_image_add"
+      @dragover.stop.prevent
+      @dragenter.stop.prevent
+      @drop.stop.prevent="dropFile"
+    >
+      <img
+        src="@/assets/img/img_photo.svg"
+        alt=""
+      />
+      <button class="btn btn_primary">
+        <input
+          type="file"
+          accept=".jpg,.png,.jpeg"
+          class="opacity-0 absolute w-[131px] h-[41px] cursor-pointer"
+          @change="uploadFile"
+        />{{ $t('select_file') }}
+      </button>
+
+      <div class="text-center">
+        <h5 class="text-gray-40 mb-3 hidden md:block">{{ $t('prompt.or_drag_file') }}</h5>
+        <p class="text-gray-40 px-4 text-center">
+          {{ $t('prompt.support_filetype', { type: 'PNG, JPEG e JPG' }) }}
+        </p>
+      </div>
+    </div>
+
+    <button
+      class="btn btn_base"
+      @click="toggleImagePopup(false)"
+    >
+      {{ $t('cancel') }}
+    </button>
+  </sign-popup>
+
+  <sign-popup
+    v-if="isShowWarnPopup"
+    :title="$t('warn')"
+  >
+    <p class="text-center">{{ $t('prompt.sure_delete_picture') }}</p>
+    <div class="flex justify-between md:justify-evenly">
+      <button
+        class="btn btn_base"
+        @click="toggleWarnPopup(false)"
+      >
+        {{ $t('not_yet') }}
+      </button>
+      <button
+        class="btn btn_primary"
+        @click="deleteImage"
+      >
+        {{ $t('delete') }}
+      </button>
+    </div>
+  </sign-popup>
+
+</template>
+
+<style lang="postcss" scoped>
+.signature_image {
+  &_add {
+    @apply border-dashed
+    border-secondary
+    border-[1px]
+    py-5
+    my-5
+    rounded-[20px]
+    flex
+    flex-col
+    justify-center
+    gap-6
+    items-center;
+  }
+}
+</style>

@@ -1,0 +1,15 @@
+@import 'tailwindcss/components';
+
+@layer components {
+  .layout {
+    @apply
+    px-[10px]
+    pt-14
+    md:flex
+    md:flex-row
+    md:justify-center
+    md:pt-0
+    md:translate-y-[120px]
+    md:-translate-x-[0px];
+  }
+}
